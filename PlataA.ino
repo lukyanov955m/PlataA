@@ -10,6 +10,7 @@ const char* versiyaProshivki = "1.2";
 #include <UniversalTelegramBot.h>
 #include <ESP8266HTTPClient.h>
 #include <time.h>
+#include <string.h>
 
 #define MAKS_ZAYAVOK 1
 
@@ -20,8 +21,12 @@ void priemPaketa();
 void statusSvyazi();
 void obrabotatGlavnuyuStranicu();
 void obrabotatSohranenie();
+void podozhdat(unsigned long ms);
 
-String ssid = "", password = "", token_bot = "", glavniy_admin_id = "";
+char ssid[33] = "";
+char password[65] = "";
+char token_bot[65] = "";
+char glavniy_admin_id[32] = "";
 
 WiFiClientSecure bezopasnyClient;
 UniversalTelegramBot* bot = nullptr;
@@ -34,6 +39,13 @@ struct Zayavka {
 };
 Zayavka spisokZayavok[MAKS_ZAYAVOK];
 int kolvoZayavok = 0;
+
+void podozhdat(unsigned long ms) {
+  unsigned long start = millis();
+  while (millis() - start < ms) {
+    yield();
+  }
+}
 
 struct Polzovatel {
   String id;
@@ -48,11 +60,12 @@ configTime(5 * 3600, 0, "pool.ntp.org", "time.nist.gov");
   time_t now = 0;
   int attempts = 0;
   while (now < 1672531200 && attempts < 30) { // 1672531200 — это 2023 год для примера
-    delay(200);
+    podozhdat(200);
     now = time(nullptr);
     attempts++;
   }
-  Serial.println("Текущее время: " + String(now));
+  Serial.print(F("Текущее время: "));
+  Serial.println(now);
 }
 
 #define MAKS_POLZOVATELEY 10
@@ -67,7 +80,7 @@ int naytiZayavku(String id) {
 }
 
 void otpravitSpisokPolzovateley(String chat_id) {
-  String otvet = "📋 *Spisok polzovateley:*\n\n";
+  String otvet = "📋 *Список пользователей:*\n\n";
   unsigned long tekTime = time(nullptr);
 
   for (int i = 0; i < kolvoPolzovateley; i++) {
@@ -79,25 +92,25 @@ void otpravitSpisokPolzovateley(String chat_id) {
       if (ostatok > 0) {
         unsigned long ch = ostatok / 3600;
         unsigned long min = (ostatok % 3600) / 60;
-        stroka += " (ostalos " + String(ch) + "ch " + String(min) + "m)";
+        stroka += " (осталось " + String(ch) + "ч " + String(min) + "м)";
       } else {
-        stroka += " (srok proshel)";
+        stroka += " (срок прошёл)";
       }
     }
     otvet += stroka + "\n";
   }
-  otvet += "\n🗑 Dlya udalenia: `Udality-ID`, primer: `Udality-123456789`\n";
+  otvet += "\n🗑 Для удаления: `Удалить-ID`, пример: `Удалить-123456789`\n";
   bot->sendMessage(chat_id, otvet, "Markdown");
 }
 
 void udalitPolzovatelyaPoId(String id, String chat_id) {
   int idx = naytiPolzovatelya(id);
   if (idx == -1) {
-    bot->sendMessage(chat_id, "❌ Polzovatel s takim ID ne naiden.");
+    bot->sendMessage(chat_id, "❌ Пользователь с таким ID не найден.");
     return;
   }
   if (spisokPolzovateley[idx].id == glavniy_admin_id) {
-    bot->sendMessage(chat_id, "🚫 Glavnogo admina nelzya udalit.");
+    bot->sendMessage(chat_id, "🚫 Главного админа нельзя удалить.");
     return;
   }
   String imya = spisokPolzovateley[idx].imya;
@@ -110,9 +123,9 @@ void udalitPolzovatelyaPoId(String id, String chat_id) {
   }
   String id_polzovatelya = spisokPolzovateley[idx].id;
   // Уведомим удаляемого пользователя
-  bot->sendMessageWithReplyKeyboard(
+    bot->sendMessageWithReplyKeyboard(
     id_polzovatelya,
-    "🚫 Vashi prava dostupa byli otmeneny administratorom.\nMozhno zaprosit dostup snova.",
+    "🚫 Ваши права доступа были отменены администратором.\nМожно запросить доступ снова.",
     "Markdown",
     menuOtvet("user"), true, false, false);
   // Удаляем
@@ -122,9 +135,9 @@ void udalitPolzovatelyaPoId(String id, String chat_id) {
   kolvoPolzovateley--;
   sohranitPolzovateley();
   // Подтверждение администратору
-  bot->sendMessage(chat_id, "✅ Polzovatel '" + imya + "' udalen.");
+  bot->sendMessage(chat_id, "✅ Пользователь '" + imya + "' удалён.");
   // Лог всем админам
-  String log = "🗑 Admin *" + imya_udalyayuschego + "* udalil polzovatelya *" + imya + "* (ID: " + id + ")";
+  String log = "🗑 Админ *" + imya_udalyayuschego + "* удалил пользователя *" + imya + "* (ID: " + id + ")";
   for (int i = 0; i < kolvoPolzovateley; i++) {
     if (spisokPolzovateley[i].roli == "admin" || spisokPolzovateley[i].id == glavniy_admin_id) {
       bot->sendMessage(spisokPolzovateley[i].id, log, "Markdown");
@@ -142,7 +155,7 @@ void dobavitZayavku(String id, String imya) {
 
 void otpravitZayavkuAdminam(String id, String imya) {
   String text = "📥 Новая заявка от: *" + imya + "*\nID: `" + id + "`";
-  String keyboard = "[[\"6 ч\", \"12 ч\", \"24 ч\"], [\"Admin\", \"Отклонить\"]]";
+  String keyboard = "[[\"6 ч\", \"12 ч\", \"24 ч\"], [\"Админ\", \"Отклонить\"]]";
   for (int i = 0; i < kolvoPolzovateley; i++) {
     if (spisokPolzovateley[i].roli == "admin" || spisokPolzovateley[i].id == glavniy_admin_id) {
       bot->sendMessageWithReplyKeyboard(
@@ -164,7 +177,7 @@ void odobritZayavku(String id, String imya, String roli, int chasy) {
   sohranitPolzovateley();
   // Сообщение пользователю
   bot->sendMessageWithReplyKeyboard(id,
-                                    "✅ Vam vydany prava: " + roli + (chasy > 0 ? " na " + String(chasy) + " chasov" : ""),
+                                    "✅ Вам выданы права: " + roli + (chasy > 0 ? " на " + String(chasy) + " часов" : ""),
                                     "", menuOtvet(roli), true, false, false);
   // Удаляем из заявок
   int idx = naytiZayavku(id);
@@ -175,7 +188,7 @@ void odobritZayavku(String id, String imya, String roli, int chasy) {
     kolvoZayavok--;
   }
   // Получим имя того, кто назначил (ищем по ID админа — временно chat_id храним)
-  String imya_admina = "Admin";
+  String imya_admina = "Админ";
   for (int i = 0; i < kolvoPolzovateley; i++) {
     if (spisokPolzovateley[i].id == glavniy_admin_id || spisokPolzovateley[i].roli == "admin") {
       if (spisokPolzovateley[i].id == bot->messages[0].chat_id) {
@@ -185,11 +198,11 @@ void odobritZayavku(String id, String imya, String roli, int chasy) {
     }
   }
   // Формируем текст уведомления
-  String log = "✅ *" + imya_admina + "* vydal dostup *" + imya + "*\n";
+  String log = "✅ *" + imya_admina + "* выдал доступ *" + imya + "*\n";
   if (roli == "gost") {
-    log += "🕒 Rol: *Gost*, na " + String(chasy) + " chasov";
+    log += "🕒 Роль: *Гость*, на " + String(chasy) + " часов";
   } else if (roli == "admin") {
-    log += "🛡 Rol: *Admin* (bes sroka)";
+    log += "🛡 Роль: *Админ* (бессрочно)";
   }
   // Отправляем всем админам
   for (int i = 0; i < kolvoPolzovateley; i++) {
@@ -200,7 +213,7 @@ void odobritZayavku(String id, String imya, String roli, int chasy) {
 }
 
 void otklonitZayavku(String id) {
-  bot->sendMessage(id, "Ваша заявка на доступ была отклонена одминмстратором дома.");
+  bot->sendMessage(id, "Ваша заявка на доступ была отклонена администратором дома.");
 
   int idx = naytiZayavku(id);
   if (idx != -1) {
@@ -264,13 +277,13 @@ void StartTelegramBot() {
   bot = new UniversalTelegramBot(token_bot, bezopasnyClient);
 
   if (!bot->getMe()) {
-    Serial.println("[ОШИБКА] Бот не авторизовался! Проверь токен.");
+    Serial.println(F("[ОШИБКА] Бот не авторизовался! Проверь токен."));
   } else {
-    Serial.println("[OK] Бот Telegram готов.");
+    Serial.println(F("[OK] Бот Telegram готов."));
   }
-  Serial.println("[DEBUG] WiFi статус: " + String(WiFi.status()));  // должен быть 3
-  Serial.println("[DEBUG] IP: " + WiFi.localIP().toString());       // должен быть нормальный IP
-  Serial.println("[DEBUG] Токен: >" + token_bot + "< длина: " + String(token_bot.length()));
+  Serial.print(F("[DEBUG] WiFi статус: ")); Serial.println(WiFi.status());
+  Serial.print(F("[DEBUG] IP: ")); Serial.println(WiFi.localIP());
+  Serial.print(F("[DEBUG] Токен: >")); Serial.print(token_bot); Serial.print(F("< длина: ")); Serial.println(strlen(token_bot));
 otpravitSoobshenieAdminam("⚡️ *Устройство перезапущено!*\n" 
   "Имя устройства: HEAD\n" 
   "IP: `" + (WiFi.softAPIP().toString()) + "` / `" + WiFi.localIP().toString() + "`\n"
@@ -307,14 +320,14 @@ void obrabotatSoobsheniya(int skolko) {
 
     // === Быстрое одобрение заявки текстом (если нет inline) ===
     if (naytiZayavku(from_id) == -1 && roli == "admin") {
-      if (text == "6 ч" || text == "12 ч" || text == "24 ч" || text == "Admin" || text == "Отклонить") {
+      if (text == "6 ч" || text == "12 ч" || text == "24 ч" || text == "Админ" || text == "Отклонить") {
         if (kolvoZayavok > 0) {
           String idZ = spisokZayavok[0].id;
           String imyaZ = spisokZayavok[0].imya;
           if (text == "6 ч") odobritZayavku(idZ, imyaZ, "gost", 6);
           else if (text == "12 ч") odobritZayavku(idZ, imyaZ, "gost", 12);
           else if (text == "24 ч") odobritZayavku(idZ, imyaZ, "gost", 24);
-          else if (text == "Admin") odobritZayavku(idZ, imyaZ, "admin", 0);
+          else if (text == "Админ") odobritZayavku(idZ, imyaZ, "admin", 0);
           else if (text == "Отклонить") otklonitZayavku(idZ);
 
           bot->sendMessageWithReplyKeyboard(chat_id, "✅ Действие выполнено.", "", menuOtvet(roli), true, false, false);
@@ -410,6 +423,7 @@ void obrabotatSoobsheniya(int skolko) {
 
     File f = SPIFFS.open(fail_polzovateli, "r");
     if (!f) {
+      Serial.println(F("[ОШИБКА] Не удалось открыть файл пользователей"));
       kolvoPolzovateley = 0;
       return;
     }
@@ -448,16 +462,18 @@ void obrabotatSoobsheniya(int skolko) {
     }
 
     File f = SPIFFS.open(fail_polzovateli, "w");
-    if (f) {
-      serializeJson(doc, f);
-      f.close();
+    if (!f) {
+      Serial.println(F("[ОШИБКА] Не удалось открыть файл пользователей для записи"));
+      return;
     }
+    serializeJson(doc, f);
+    f.close();
   }
 
   void proveritProshliLiGosti() {
     if (millis() - vremyaPosledneyProverkiGostey >= intervalGostey) {
       vremyaPosledneyProverkiGostey = millis();
-      Serial.println("Вызвана proveritProshliLiGosti, по логике раз в 5 мин");
+      Serial.println(F("Вызвана proveritProshliLiGosti, по логике раз в 5 мин"));
       unsigned long tekushcheeVremya = time(nullptr);
       bool izmeneniya = false;
 
@@ -495,10 +511,10 @@ void obrabotatSoobsheniya(int skolko) {
     if (!f) return;
     StaticJsonDocument<512> doc;
     if (deserializeJson(doc, f) == DeserializationError::Ok) {
-      ssid = doc["ssid"] | "";
-      password = doc["pass"] | "";
-      token_bot = doc["token"] | "";
-      glavniy_admin_id = doc["admin_id"] | "";
+      strlcpy(ssid, doc["ssid"] | "", sizeof(ssid));
+      strlcpy(password, doc["pass"] | "", sizeof(password));
+      strlcpy(token_bot, doc["token"] | "", sizeof(token_bot));
+      strlcpy(glavniy_admin_id, doc["admin_id"] | "", sizeof(glavniy_admin_id));
       f.close();
     }
   }
@@ -511,7 +527,10 @@ void obrabotatSoobsheniya(int skolko) {
     doc["token"] = token;
     doc["admin_id"] = admin_id;
     File f = SPIFFS.open("/wifi.json", "w");
-    if (!f) return;
+    if (!f) {
+      Serial.println(F("[ОШИБКА] Не удалось открыть wifi.json для записи"));
+      return;
+    }
     serializeJson(doc, f);
     f.close();
   }
@@ -571,7 +590,7 @@ void obrabotatSoobsheniya(int skolko) {
   ////отправка запросов на другую плату
   void otpravitHttpKomandu(String cmd) {
     if (!ipDrugoyPlaty || WiFi.status() != WL_CONNECTED) {
-      Serial.println("Нет IP другой платы или нет Wi-Fi");
+      Serial.println(F("Нет IP другой платы или нет Wi-Fi"));
       return;
     }
 
@@ -582,13 +601,13 @@ void obrabotatSoobsheniya(int skolko) {
       zapros += "Connection: close\r\n\r\n";
 
       client.print(zapros);
-      Serial.println("HTTP-запрос отправлен: " + zapros);
+      Serial.print(F("HTTP-запрос отправлен: ")); Serial.println(zapros);
 
       // Чтение ответа (опционально)
       unsigned long timeout = millis();
       while (client.available() == 0) {
         if (millis() - timeout > 3000) {
-          Serial.println("Время ожидания ответа истекло");
+          Serial.println(F("Время ожидания ответа истекло"));
           client.stop();
           return;
         }
@@ -596,12 +615,12 @@ void obrabotatSoobsheniya(int skolko) {
 
       while (client.available()) {
         String stroka = client.readStringUntil('\n');
-        Serial.println("Ответ: " + stroka);
+        Serial.println(stroka);
       }
 
       client.stop();
     } else {
-      Serial.println("Ошибка подключения к " + ipDrugoyPlaty.toString());
+      Serial.print(F("Ошибка подключения к ")); Serial.println(ipDrugoyPlaty);
     }
   }
 
@@ -629,7 +648,7 @@ else
   // 3. Wi-Fi
   out += "📡 Режим работы: " + String(wifiRezhimTochki ? "Точка доступа (AP)" : "Клиент Wi-Fi (STA)") + "\n";
   out += "📶 Статус Wi-Fi: " + String(wifiPodklyuchen ? "ПОДКЛЮЧЕН" : "НЕТ СЕТИ") + "\n";
-  out += "📂 SSID: " + (ssid != "" ? ssid : "не задан") + "\n";
+  out += String(F("📂 SSID: ")) + (strlen(ssid) ? String(ssid) : F("не задан")) + "\n";
   out += "🌐 IP устройства: " + (wifiRezhimTochki ? WiFi.softAPIP().toString() : WiFi.localIP().toString()) + "\n";
 
   // 4. Информация о второй плате
@@ -670,7 +689,7 @@ else
       if (server.hasArg("cmd")) {
         String komanda = server.arg("cmd");
         server.send(200, "text/plain", "Получена команда: " + komanda);
-        Serial.println("HTTP-команда получена: " + komanda);
+        Serial.print(F("HTTP-команда получена: ")); Serial.println(komanda);
       } else {
         server.send(400, "text/plain", "Параметр cmd не передан");
       }
@@ -705,13 +724,13 @@ void zaprositStatus(String chat_id) {
         zapros += "Connection: close\r\n\r\n";
         client.print(zapros);
         bot->sendMessage(chat_id, "📤 Запрос статуса (попытка " + String(popitka) + ")", "Markdown");
-        Serial.println("📤 Отправлен запрос статуса (попытка " + String(popitka) + ")");
+        Serial.print(F("📤 Отправлен запрос статуса (попытка ")); Serial.print(popitka); Serial.println(F(")"));
         waitingResponse = true;
         startWait = millis();
         allStatus = "";
       } else {
         bot->sendMessage(chat_id, "❌ Не удалось подключиться к плате (попытка " + String(popitka) + ")", "Markdown");
-        Serial.println("❌ Не удалось подключиться к " + ipDrugoyPlaty.toString());
+        Serial.print(F("❌ Не удалось подключиться к ")); Serial.println(ipDrugoyPlaty);
         lastTryTime = millis();
         popitka++;
         continue;
@@ -721,7 +740,7 @@ void zaprositStatus(String chat_id) {
     // Если ожидаем ответ, но не дождались
     if (waitingResponse && millis() - startWait > 5000) {
       bot->sendMessage(chat_id, "⛔ Время ожидания ответа истекло (попытка " + String(popitka) + ")", "Markdown");
-      Serial.println("⛔ Время ожидания ответа истекло");
+      Serial.println(F("⛔ Время ожидания ответа истекло"));
       client.stop();
       waitingResponse = false;
       popitka++;
@@ -745,7 +764,7 @@ void zaprositStatus(String chat_id) {
       }
       client.stop();
       bot->sendMessage(chat_id, allStatus, "Markdown");
-      Serial.println("✅ Статус получен и выведен");
+      Serial.println(F("✅ Статус получен и выведен"));
       popitka = 0;
       waitingResponse = false;
       return;
@@ -770,7 +789,7 @@ void zaprositStatus(String chat_id) {
 
   void setup() {
     Serial.begin(115200);
-    delay(1000);
+    podozhdat(1000);
     pinMode(PIN_KNOPKA, INPUT_PULLUP);  // Используем внутреннюю подтяжку к VCC
     pinMode(PIN_SVETODIOD, OUTPUT);
     digitalWrite(PIN_SVETODIOD, LOW);  // чтобы стартовать в выкл состоянии
@@ -778,10 +797,10 @@ void zaprositStatus(String chat_id) {
     }
 
     zagruzitNastroiki();
-    Serial.println("SSID: " + ssid);
-    Serial.println("Пароль: " + password);
-    Serial.println("Токен: " + token_bot);
-    Serial.println("ID админа: " + glavniy_admin_id);
+    Serial.print(F("SSID: ")); Serial.println(ssid);
+    Serial.print(F("Пароль: ")); Serial.println(password);
+    Serial.print(F("Токен: ")); Serial.println(token_bot);
+    Serial.print(F("ID админа: ")); Serial.println(glavniy_admin_id);
     proveritWiFi();
     udp.begin(portUDP);
     // --- OTA через браузер ---
@@ -795,7 +814,7 @@ void zaprositStatus(String chat_id) {
     server.on("/sohranit", HTTP_POST, obrabotatSohranenie);
     server.begin();
     zagruzitPolzovateley();
-    Serial.println("Пользователи загружены: " + String(kolvoPolzovateley));
+    Serial.print(F("Пользователи загружены: ")); Serial.println(kolvoPolzovateley);
     ubeditGlavnyiAdminEst();
   }
 
@@ -817,13 +836,13 @@ void zaprositStatus(String chat_id) {
     if (sostoyanie && knopkaUderzhana) {
       // Кнопка удерживается — проверяем длительность
       if (millis() - vremyaNazhatiya >= ZADERZHKA_MS) {
-        Serial.println("Кнопка удерживалась 5 секунд — выполняем функцию");
+        Serial.println(F("Кнопка удерживалась 5 секунд — выполняем функцию"));
         otpravitHttpKomandu("cleanspiff");
-        Serial.println("На вторую палту передано сообщение очистки файлов в системе");
+        Serial.println(F("На вторую палту передано сообщение очистки файлов в системе"));
 
         // Ждём отпускания, чтобы не сработало снова
         while (digitalRead(PIN_KNOPKA) == LOW) {
-          delay(10);
+          podozhdat(10);
         }
         knopkaUderzhana = false;
       }
@@ -855,30 +874,33 @@ void zaprositStatus(String chat_id) {
       return;
     }
 
-    Serial.println("Pytayus podklyuchitsya k: " + ssid + " / " + password);
+    Serial.print(F("Пытаюсь подключиться к: "));
+    Serial.print(ssid);
+    Serial.print(F(" / "));
+    Serial.println(password);
     WiFi.mode(WIFI_STA);
-    WiFi.begin(ssid.c_str(), password.c_str());
+    WiFi.begin(ssid, password);
 
     unsigned long start = millis();
     while (WiFi.status() != WL_CONNECTED && millis() - start < 8000) {
-      delay(500);
-      Serial.print(".");
+      podozhdat(500);
+      Serial.print(F("."));
     }
 
     if (WiFi.status() == WL_CONNECTED) {
       wifiPodklyuchen = true;
       wifiRezhimTochki = false;
-      Serial.println("\nWi-Fi PODKLYUCHEN! IP: " + WiFi.localIP().toString());
+      Serial.print(F("\nWi-Fi ПОДКЛЮЧЕН! IP: ")); Serial.println(WiFi.localIP());
       zapustitpriemhttp();
       StartTelegramBot();
 
     } else {
-      Serial.println("Ne udalos podklyuchitsya. Vkluchayu tochku dostupa...");
+      Serial.println(F("Не удалось подключиться. Включаю точку доступа..."));
       WiFi.mode(WIFI_AP);
       WiFi.softAP(imyaTochki, parolTochki);
       wifiPodklyuchen = false;
       wifiRezhimTochki = true;
-      Serial.println("Tochka dostupa: " + WiFi.softAPIP().toString());
+      Serial.print(F("Точка доступа: ")); Serial.println(WiFi.softAPIP());
     }
   }
 
@@ -888,10 +910,10 @@ void zaprositStatus(String chat_id) {
     String html = "<html><head><meta charset='utf-8'><title>Настройка</title></head><body>";
     html += "<h2>Конфигурация ESP</h2><form method='POST' action='/sohranit'>";
 
-    html += "Wi-Fi SSID:<br><input name='ssid' value='" + ssid + "'><br>";
-    html += "Wi-Fi Пароль:<br><input name='pass' type='password' value='" + password + "'><br>";
-    html += "Telegram Token:<br><input name='token' value='" + token_bot + "'><br>";
-    html += "ID Главного Админа:<br><input name='admin_id' value='" + glavniy_admin_id + "'><br><br>";
+    html += String(F("Wi-Fi SSID:<br><input name='ssid' value='")) + ssid + F("'><br>");
+    html += String(F("Wi-Fi Пароль:<br><input name='pass' type='password' value='")) + password + F("'><br>");
+    html += String(F("Telegram Token:<br><input name='token' value='")) + token_bot + F("'><br>");
+    html += String(F("ID Главного Админа:<br><input name='admin_id' value='")) + glavniy_admin_id + F("'><br><br>");
 
     html += "<input type='submit' value='Сохранить и перезапустить'>";
     html += "</form></body></html>";
@@ -906,9 +928,13 @@ void zaprositStatus(String chat_id) {
     String new_admin = server.arg("admin_id");
 
     sohranitNastroiki(new_ssid, new_pass, new_token, new_admin);
+    strlcpy(ssid, new_ssid.c_str(), sizeof(ssid));
+    strlcpy(password, new_pass.c_str(), sizeof(password));
+    strlcpy(token_bot, new_token.c_str(), sizeof(token_bot));
+    strlcpy(glavniy_admin_id, new_admin.c_str(), sizeof(glavniy_admin_id));
 
     server.send(200, "text/html", "<html><body><h3>Сохранено! Перезапуск через 3 сек...</h3></body></html>");
-    delay(3000);
+    podozhdat(3000);
     ESP.restart();
   }
 
