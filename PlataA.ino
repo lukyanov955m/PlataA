@@ -691,7 +691,7 @@ else
         server.send(200, "text/plain", "Получена команда: " + komanda);
         Serial.print(F("HTTP-команда получена: ")); Serial.println(komanda);
       } else {
-        server.send(400, "text/plain", "Параметр cmd не передан");
+        server.send(400, "text/plain", F("Параметр cmd не передан"));
       }
     });
     //server.begin(); //удалил чтобы проерить ++++++++++++++++
@@ -933,7 +933,7 @@ void zaprositStatus(String chat_id) {
     strlcpy(token_bot, new_token.c_str(), sizeof(token_bot));
     strlcpy(glavniy_admin_id, new_admin.c_str(), sizeof(glavniy_admin_id));
 
-    server.send(200, "text/html", "<html><body><h3>Сохранено! Перезапуск через 3 сек...</h3></body></html>");
+    server.send(200, "text/html", F("<html><body><h3>Сохранено! Перезапуск через 3 сек...</h3></body></html>"));
     podozhdat(3000);
     ESP.restart();
   }
